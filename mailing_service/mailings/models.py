@@ -1,3 +1,4 @@
+from django.utils import timezone
 from django.db import models
 
 class Client(models.Model):
@@ -11,7 +12,7 @@ class Client(models.Model):
 
 
 class Mailing(models.Model):
-    start_time = models.DateTimeField()
+    start_time = models.DateTimeField(default=timezone.now)
     message = models.TextField()
     filter_operator_code = models.CharField(max_length=10)
     filter_tag = models.CharField(max_length=100)

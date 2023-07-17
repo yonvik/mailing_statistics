@@ -1,9 +1,10 @@
 from rest_framework import viewsets
-from rest_framework.decorators import api_view, renderer_classes
-from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
+from django.http import JsonResponse
+from celery.result import AsyncResult
 from .models import Client, Mailing, Message
 from .serializers import ClientSerializer, MailingSerializer, MessageSerializer
+from mailing_service.tasks import send_message_to_client
 
 
 class ClientViewSet(viewsets.ModelViewSet):
@@ -25,6 +26,16 @@ class MailingViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(filter_operator_code=operator_code)
         return queryset
 
+    def create(self, request, *args, **kwargs):
+        message = request.POST.get('message')
+
+        if not message:
+            return JsonResponse({'error': 'Message is required.'}, status=400)
+
+        send_message_to_client.delay(message)
+
+        return JsonResponse({'message': 'Message sent successfully.'})
+
 
 class MessageViewSet(viewsets.ModelViewSet):
     queryset = Message.objects.all()
@@ -41,16 +52,19 @@ class MessageViewSet(viewsets.ModelViewSet):
         return queryset
 
 
-@api_view(['GET'])
-@renderer_classes([JSONRenderer])
 def mailing_statistics(request):
-    mailings = Mailing.objects.all()
-    total_mailings = mailings.count()
-    total_messages = Message.objects.count()
-    return Response({
-        'total_mailings': total_mailings,
-        'total_messages': total_messages,
-    })
+    if request.method == 'POST':
+        message = request.POST.get('message')
+        if message:
+            task = send_message_to_client.delay(message)
+            return JsonResponse({
+                'task_id': task.id,
+                'task_status': task.status,
+            })
+        else:
+            return JsonResponse({'error': 'Message is required'}, status=400)
+    else:
+        return JsonResponse({'error': 'Invalid request method'}, status=400)
 
 def mailing_message_statistics(request, mailing_id):
     try:
